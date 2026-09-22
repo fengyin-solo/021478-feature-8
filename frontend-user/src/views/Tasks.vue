@@ -176,6 +176,19 @@
     />
 
     <Modal
+      v-model="showCancelWaitlistModal"
+      icon="warning"
+      icon-type="warning"
+      title="确认取消候补"
+      :subtitle="selectedTask?.extra?.waitlistRank ? `取消后将失去第 ${selectedTask.extra.waitlistRank} 位候补名次` : '取消后将失去候补名次'"
+      size="small"
+      confirm-text="确认取消候补"
+      confirm-type="danger"
+      :loading="cancelWaitlistLoading"
+      @confirm="confirmCancelWaitlist"
+    />
+
+    <Modal
       v-model="showDetailModal"
       :title="selectedTask?.typeName + '详情'"
       size="medium"
@@ -208,6 +221,24 @@
             <span class="detail-label">交易金额</span>
             <span class="detail-value amount">¥{{ selectedTask.amount.toLocaleString() }}</span>
           </div>
+          <template v-if="selectedTask.type === 'competition'">
+            <div v-if="selectedTask.extra?.regNo" class="detail-row">
+              <span class="detail-label">报名编号</span>
+              <span class="detail-value">{{ selectedTask.extra.regNo }}</span>
+            </div>
+            <div v-if="selectedTask.extra?.regStatus === 'waitlisted'" class="detail-row">
+              <span class="detail-label">候补名次</span>
+              <span class="detail-value">第 {{ competitionLiveRank(selectedTask) }} 位</span>
+            </div>
+            <div v-else-if="competitionLivePlayerNo(selectedTask)" class="detail-row">
+              <span class="detail-label">参赛号</span>
+              <span class="detail-value amount">#{{ competitionLivePlayerNo(selectedTask) }}</span>
+            </div>
+            <div v-if="selectedTask.extra?.date" class="detail-row">
+              <span class="detail-label">比赛日期</span>
+              <span class="detail-value">{{ selectedTask.extra.date }}</span>
+            </div>
+          </template>
           <div class="detail-row">
             <span class="detail-label">创建时间</span>
             <span class="detail-value">{{ selectedTask.createdAt }}</span>
@@ -243,6 +274,7 @@ import Toast from '../components/Toast.vue'
 import { logger } from '../utils/api'
 import { authState } from '../utils/auth'
 import { taskStore } from '../utils/taskStore'
+import { competitionStore } from '../utils/competitionStore'
 
 export default {
   name: 'Tasks',
@@ -258,6 +290,8 @@ export default {
       showSuccessModal: false,
       payLoading: false,
       cancelLoading: false,
+      cancelWaitlistLoading: false,
+      showCancelWaitlistModal: false,
       successTitle: '',
       successMessage: '',
       showToast: false,
@@ -325,15 +359,16 @@ export default {
     },
     handleAction(task, action) {
       this.selectedTask = { ...task }
-      
+
       if (action.route) {
         this.navigateToRoute(action.route, action.key, task)
         return
       }
-      
+
       const actionMap = {
         pay: () => this.openPayModal(),
         cancel: () => this.openCancelModal(),
+        cancel_waitlist: () => this.openCancelWaitlistModal(),
         view: () => this.openDetailModal(),
         remind: () => this.handleRemind(),
         rebook: () => this.navigateToRoute('/tables', 'rebook', task),
@@ -370,6 +405,46 @@ export default {
     },
     openCancelModal() {
       this.showCancelModal = true
+    },
+    openCancelWaitlistModal() {
+      this.showCancelWaitlistModal = true
+    },
+    getCompetitionLiveInfo(task) {
+      if (task.type !== 'competition' || !task.extra?.competitionId) return null
+      const userId = authState.user?.id
+      return competitionStore.getMyRegistration(task.extra.competitionId, userId)
+    },
+    competitionLiveRank(task) {
+      const live = this.getCompetitionLiveInfo(task)
+      return live?.rank || task.extra?.waitlistRank || '-'
+    },
+    competitionLivePlayerNo(task) {
+      const live = this.getCompetitionLiveInfo(task)
+      return live?.playerNo || task.extra?.playerNo || null
+    },
+    async confirmCancelWaitlist() {
+      if (!this.selectedTask || this.cancelWaitlistLoading) return
+      if (!authState.isLoggedIn) {
+        this.showCancelWaitlistModal = false
+        this.showNotification('warning', '登录已失效', '请重新登录后再操作')
+        return
+      }
+      this.cancelWaitlistLoading = true
+      await new Promise(resolve => setTimeout(resolve, 700))
+
+      const competitionId = this.selectedTask.extra?.competitionId
+      const result = competitionStore.cancelWaitlist(competitionId, authState.user.id)
+
+      this.cancelWaitlistLoading = false
+      this.showCancelWaitlistModal = false
+
+      if (result.success) {
+        this.refreshTasks()
+        this.showNotification('success', '已取消候补', '您已退出该赛事候补队列')
+        logger.info('Waitlist cancelled', { competitionId })
+      } else {
+        this.showNotification('error', '取消失败', result.message || '请稍后重试')
+      }
     },
     openDetailModal() {
       this.showDetailModal = true

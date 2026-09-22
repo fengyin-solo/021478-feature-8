@@ -60,6 +60,10 @@ const taskTypeConfig = {
         { key: 'pay', label: '继续付款', type: 'primary', route: '/competitions' },
         { key: 'cancel', label: '取消', type: 'danger' }
       ],
+      waitlisted: [
+        { key: 'view_waitlist', label: '查看候补名次', type: 'primary', route: '/competitions' },
+        { key: 'cancel_waitlist', label: '取消候补', type: 'danger' }
+      ],
       upcoming: [
         { key: 'view', label: '查看赛程', type: 'primary', route: '/competitions' }
       ],
@@ -98,6 +102,7 @@ const taskTypeConfig = {
 
 const statusConfig = {
   pending_payment: { text: '待付款', type: 'warning' },
+  waitlisted: { text: '候补中', type: 'warning' },
   upcoming: { text: '待开始', type: 'info' },
   ongoing: { text: '进行中', type: 'primary' },
   pending_shipment: { text: '待发货', type: 'warning' },
@@ -315,6 +320,42 @@ export const taskStore = {
         date: competition.date
       }
     })
+  },
+
+  /**
+   * 新增或更新赛事报名任务（与 competitionStore 状态保持一致）
+   * taskData.id 固定为 COMP-{competitionId}-{userId}，保证一场赛事一人仅一条任务
+   */
+  upsertCompetitionRegistration(taskData) {
+    const tasks = loadTasks()
+    const index = tasks.findIndex(t => t.id === taskData.id)
+    if (index !== -1) {
+      tasks[index] = { ...tasks[index], ...taskData, id: taskData.id }
+      saveTasks(tasks)
+      logger.info('赛事报名任务已更新', taskData.id)
+      return enrichTask(tasks[index])
+    }
+    const newTask = {
+      createdAt: formatDate(new Date()),
+      ...taskData
+    }
+    tasks.unshift(newTask)
+    saveTasks(tasks)
+    logger.info('赛事报名任务已添加', newTask.id)
+    return enrichTask(newTask)
+  },
+
+  /**
+   * 删除赛事报名任务（取消候补时调用）
+   */
+  removeCompetitionRegistration(competitionId, userId) {
+    const taskId = `COMP-${competitionId}-${userId}`
+    const tasks = loadTasks()
+    const filtered = tasks.filter(t => t.id !== taskId)
+    if (filtered.length === tasks.length) return false
+    saveTasks(filtered)
+    logger.info('赛事报名任务已删除', taskId)
+    return true
   },
 
   addOrderTask(order) {
