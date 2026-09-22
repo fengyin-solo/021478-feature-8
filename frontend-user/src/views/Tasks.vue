@@ -243,6 +243,7 @@ import Toast from '../components/Toast.vue'
 import { logger } from '../utils/api'
 import { authState } from '../utils/auth'
 import { taskStore } from '../utils/taskStore'
+import { competitionStore } from '../utils/competitionStore'
 
 export default {
   name: 'Tasks',
@@ -398,20 +399,41 @@ export default {
     async confirmCancel() {
       if (!this.selectedTask) return
       this.cancelLoading = true
-      
+
       await new Promise(resolve => setTimeout(resolve, 800))
-      
-      const result = taskStore.remove(this.selectedTask.id)
-      
+
+      // 赛事报名的取消必须经 competitionStore 处理：
+      // 释放名额/回收参赛号，并按候补顺序自动递补，保证名额与参赛号不错配
+      let result
+      let cancelMessage = '任务已取消'
+      if (
+        this.selectedTask.type === 'competition' &&
+        this.selectedTask.extra?.regNo
+      ) {
+        const compResult = competitionStore.cancelByRegNo(this.selectedTask.extra.regNo)
+        result = compResult.success
+        if (compResult.success) {
+          cancelMessage = this.selectedTask.status === 'waitlisted'
+            ? '已取消候补，后续名次自动前移'
+            : compResult.promoted
+              ? `报名已取消，候补选手 ${compResult.promoted.name} 已递补（参赛号 #${compResult.promoted.playerNo}）`
+              : '报名已取消，参赛号已回收'
+        } else {
+          cancelMessage = compResult.message || '取消失败'
+        }
+      } else {
+        result = taskStore.remove(this.selectedTask.id)
+      }
+
       this.cancelLoading = false
       this.showCancelModal = false
-      
+
       if (result) {
         this.refreshTasks()
-        this.showNotification('success', '取消成功', '任务已取消')
+        this.showNotification('success', '取消成功', cancelMessage)
         logger.info('Task cancelled', { taskId: this.selectedTask.id })
       } else {
-        this.showNotification('error', '取消失败', '请稍后重试')
+        this.showNotification('error', '取消失败', cancelMessage || '请稍后重试')
       }
     },
     async handleRemind() {

@@ -60,8 +60,13 @@ const taskTypeConfig = {
         { key: 'pay', label: '继续付款', type: 'primary', route: '/competitions' },
         { key: 'cancel', label: '取消', type: 'danger' }
       ],
+      waitlisted: [
+        { key: 'view', label: '候补名次', type: 'primary', route: '/competitions' },
+        { key: 'cancel', label: '取消候补', type: 'danger' }
+      ],
       upcoming: [
-        { key: 'view', label: '查看赛程', type: 'primary', route: '/competitions' }
+        { key: 'view', label: '查看赛程', type: 'primary', route: '/competitions' },
+        { key: 'cancel', label: '取消报名', type: 'danger' }
       ],
       ongoing: [
         { key: 'view', label: '观看直播', type: 'primary', route: '/competitions' }
@@ -98,7 +103,8 @@ const taskTypeConfig = {
 
 const statusConfig = {
   pending_payment: { text: '待付款', type: 'warning' },
-  upcoming: { text: '待开始', type: 'info' },
+  waitlisted: { text: '候补中', type: 'info' },
+  upcoming: { text: '待开始', type: 'primary' },
   ongoing: { text: '进行中', type: 'primary' },
   pending_shipment: { text: '待发货', type: 'warning' },
   shipped: { text: '已发货', type: 'info' },
@@ -302,16 +308,20 @@ export const taskStore = {
   },
 
   addCompetitionTask(competition, regInfo) {
+    const isWaitlisted = regInfo.status === 'waitlisted'
     return this.add({
       type: 'competition',
       title: competition.name,
-      subtitle: competition.status === 'upcoming' ? '等待比赛开始' : '比赛进行中',
+      subtitle: isWaitlisted
+        ? '已满员，已进入候补名单'
+        : competition.status === 'upcoming' ? '报名成功，等待比赛开始' : '比赛进行中',
       amount: competition.fee,
-      status: competition.status === 'upcoming' ? 'upcoming' : 'ongoing',
+      status: isWaitlisted ? 'waitlisted' : competition.status === 'upcoming' ? 'upcoming' : 'ongoing',
       extra: {
         competitionId: competition.id,
         regNo: regInfo.regNo,
         playerNo: regInfo.playerNo,
+        waitlistNo: regInfo.waitlistNo,
         date: competition.date
       }
     })
